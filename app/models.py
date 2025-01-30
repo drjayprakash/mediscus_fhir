@@ -8,6 +8,6 @@ class TokenResponse(BaseModel):
     refresh_token: str
 
 class Patient(BaseModel):
-    id: str
+    id: str = None
     name: str
     birthDate: str
