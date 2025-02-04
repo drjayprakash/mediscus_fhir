@@ -7,8 +7,34 @@ router = APIRouter()
 
 KEYCLOAK_URL = os.getenv("KEYCLOAK_SERVER_URL")
 REALM = os.getenv("KEYCLOAK_REALM")
-ADMIN_CLIENT_ID = "admin-cli"
+ADMIN_CLIENT_ID = os.getenv("CLOAK_CLIENT_ID")
 ADMIN_CLIENT_SECRET = os.getenv("KEYCLOAK_CLIENT_SECRET")
+
+
+def get_admin_token():
+    """Obtain an admin token from Keycloak."""
+    url = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/token"
+    data = {
+        "client_id": ADMIN_CLIENT_ID,
+        "client_secret": ADMIN_CLIENT_SECRET,
+        "grant_type": "client_credentials",
+    }
+
+    try:
+        response = requests.post(url, data=data)
+        response_json = response.json()
+
+        # Debugging: Print response details
+        print("Keycloak Token Response Status Code:", response.status_code)
+        print("Keycloak Token Response JSON:", response_json)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to obtain admin token: {response_json}")
+
+        return response_json.get("access_token")
+
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Request error: {e}")
 
 
 class SignUpRequest(BaseModel):
@@ -16,18 +42,6 @@ class SignUpRequest(BaseModel):
     password: str
     first_name: str
     last_name: str
-
-
-def get_admin_token():
-    """Obtain an admin token from Keycloak."""
-    url = f"{KEYCLOAK_URL}/realms/master/protocol/openid-connect/token"
-    data = {
-        "client_id": ADMIN_CLIENT_ID,
-        "client_secret": ADMIN_CLIENT_SECRET,
-        "grant_type": "client_credentials",
-    }
-    response = requests.post(url, data=data)
-    return response.json()["access_token"]
 
 
 @router.post("/signup")
@@ -41,8 +55,8 @@ def signup(user: SignUpRequest):
     payload = {
         "username": user.email,
         "email": user.email,
-        "firstName": user.firstName,
-        "lastName": user.lastName,
+        "firstName": user.first_name,
+        "lastName": user.last_name,
         "enabled": True,
         "credentials": [{"type": "password", "value": user.password, "temporary": False}],
         "attributes": {"linked_accounts": "[]"},  # Empty list for family members
@@ -69,7 +83,7 @@ def login(user: LoginRequest):
     """Authenticate user with Keycloak."""
     url = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/token"
     data = {
-        "client_id": "smartfhirclient",
+        "client_id": os.getenv("CLOAK_CLIENT_ID"),
         "client_secret": os.getenv("KEYCLOAK_CLIENT_SECRET"),
         "grant_type": "password",
         "username": user.username,
