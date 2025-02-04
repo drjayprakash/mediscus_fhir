@@ -10,6 +10,6 @@ KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM", "smart")
 KEYCLOAK_CLIENT_ID = os.getenv("KEYCLOAK_CLIENT_ID", "smartfhirclient")
 KEYCLOAK_CLIENT_SECRET = os.getenv("KEYCLOAK_CLIENT_SECRET")
 KEYCLOAK_REDIRECT_URI = os.getenv("KEYCLOAK_REDIRECT_URI", "http://localhost:8000/callback")
-FHIR_SERVER_BASE = os.getenv("FHIR_SERVER_BASE", "https://fhir.mediscus.in")
+FHIR_SERVER_BASE = os.getenv("FHIR_SERVER_BASE", "http://156.67.111.202:8080/")
 
 
