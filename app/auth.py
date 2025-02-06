@@ -141,51 +141,45 @@ def login(user: LoginRequest):
     url = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/token"
     
     data = {
-        "client_id": os.getenv("KEYCLOAK_CLIENT_ID"),
-        "client_secret": os.getenv("KEYCLOAK_CLIENT_SECRET"),
+        "client_id": smartfhir,
+        "client_secret": iB9zJEsDxLdzLEF44KUB0xxAmIxsVela,
         "grant_type": "password",
         "username": user.username,
         "password": user.password,
+        "scope": "openid profile email"  # Ensure these scopes are requested
     }
 
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-    # Get access token
     response = requests.post(url, data=data, headers=headers)
-
+    
+    # Debugging: Print response details
     print("Login Response Status Code:", response.status_code)
     print("Login Response JSON:", response.json())
 
-    if response.status_code == 200:
-        tokens = response.json()
-        access_token = tokens.get("access_token")
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail=response.json())
 
-        # Fetch user info
-        user_info_url = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/userinfo"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
-        
-        user_info_response = requests.get(user_info_url, headers=headers)
+    tokens = response.json()
+    access_token = tokens.get("access_token")
 
-        print("User Info Response Status Code:", user_info_response.status_code)
-        print("User Info Response JSON:", user_info_response.json())
+    # Fetch user info from Keycloak
+    user_info_url = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/userinfo"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    
+    user_info_response = requests.get(user_info_url, headers=headers)
 
-        if user_info_response.status_code == 200:
-            user_data = user_info_response.json()
-            return {"access_token": access_token, "user_info": user_data}
-        else:
-            raise HTTPException(status_code=400, detail=f"Failed to fetch user info: {user_info_response.json()}")
+    print("User Info Response Status Code:", user_info_response.status_code)
 
+    if user_info_response.status_code == 200:
+        user_data = user_info_response.json()
+        return {"access_token": access_token, "user_info": user_data}
+    elif user_info_response.status_code == 403:
+        print("🔴 ERROR: Access forbidden. Check Keycloak client roles.")
+        raise HTTPException(status_code=403, detail="Forbidden: Missing user info permissions")
     else:
-        print("Login Failed Response:", response.json())  # Debugging
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-
-
-
-
+        print("🔴 ERROR: Unexpected response when fetching user info")
+        raise HTTPException(status_code=400, detail="Failed to fetch user info")
 
 
 ########################################################################################################
