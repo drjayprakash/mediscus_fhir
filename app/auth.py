@@ -1,24 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from typing import Optional
 import requests
 from dotenv import load_dotenv
 import os
+import json
 
 load_dotenv()  # This loads environment variables from .env file
-
-import os
-
 router = APIRouter()
 
-KEYCLOAK_URL = os.getenv("KEYCLOAK_SERVER_URL")
-REALM = os.getenv("KEYCLOAK_REALM")
-ADMIN_CLIENT_ID = os.getenv("CLOAK_CLIENT_ID")
-ADMIN_CLIENT_SECRET = os.getenv("KEYCLOAK_CLIENT_SECRET")
-
-
-
-import os
-import requests
 
 KEYCLOAK_URL = os.getenv("KEYCLOAK_SERVER_URL")
 REALM = os.getenv("KEYCLOAK_REALM")
@@ -59,23 +49,25 @@ def get_admin_token():
     except requests.exceptions.RequestException as e:
         raise Exception(f"Request error: {e}")
 
-
-
-
-
 class SignUpRequest(BaseModel):
+    # username: str
     email: str
     password: str
     first_name: str
     last_name: str
+    primary_user_id: Optional[str] = None
 
 
 @router.post("/signup")
 def signup(user: SignUpRequest):
     """Register a primary user in Keycloak."""
-    token = get_admin_token()
+    token = get_admin_token()  # Obtain admin token
 
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
     url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users"
 
     payload = {
@@ -85,25 +77,116 @@ def signup(user: SignUpRequest):
         "lastName": user.last_name,
         "enabled": True,
         "credentials": [{"type": "password", "value": user.password, "temporary": False}],
-        "attributes": {"linked_accounts": "[]"},  # Empty list for family members
+        "attributes": {}  # No linked accounts for primary user initially
     }
 
     response = requests.post(url, json=payload, headers=headers)
- 
-    print('response', response)
 
     if response.status_code == 201:
-        return {"message": "User created successfully"}
+        return {"message": "Primary user created successfully"}
     else:
-        raise HTTPException(status_code=400, detail=response.json())
+        raise HTTPException(status_code=400, detail="Error creating primary user")
+
+
+@router.post("/add-family-member")
+def add_family_member(user: SignUpRequest):
+    """Add a family member linked to a primary user."""
+    token = get_admin_token()  # Obtain admin token
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users"
+
+    # Create family member with primary_user_id as an attribute
+    payload = {
+        "username": user.email,
+        "email": user.email,
+        "firstName": user.first_name,
+        "lastName": user.last_name,
+        "enabled": True,
+        "credentials": [{"type": "password", "value": user.password, "temporary": False}],
+        "attributes": {"primary_user_id": user.primary_user_id}  # Link to primary user
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+    print("response status code", response.status_code)
+    print("response headers", response.headers)
+    
+    if response.status_code != 201:
+        print("error json", response.json())
+        raise HTTPException(status_code=response.status_code, detail= response.json()['errorMessage'])
+    
+    family_member_id = response.headers["Location"].split("/")[-1]
+    # Retrieve the primary user data
+    primary_user_url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users/{user.primary_user_id}"
+    primary_user_data = requests.get(primary_user_url, headers=headers).json()
+
+    # Get the existing linked accounts (if any)
+    linked_accounts = primary_user_data.get("attributes", {}).get("linked_accounts", [])
+    print(linked_accounts)
+    print(type(linked_accounts))
+    
+    # Add the family member to the linked accounts
+    linked_accounts.append(family_member_id)
+    print("-----------", linked_accounts)
+    print(type(linked_accounts))
+    # Update the primary user to include the new family member in linked accounts
+    update_payload = {
+        "attributes": {
+            "linked_accounts": linked_accounts
+        }
+    }
+    update_url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users/{user.primary_user_id}"
+    response = requests.put(update_url, json=update_payload, headers=headers)
+
+    if response.status_code == 204:
+        return {"message": "Family member crerated and linked to primary user successfully"}
+    else:
+        print("error linking family--", response.json())
+        raise HTTPException(status_code=response.status_code, detail=response.json()['errorMessage'])
+
+# Function to fetch all users from Keycloak
+def get_user(user_id, token):
+    print("get user calling")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    get_user_url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users/{user_id}"
+    user_data = requests.get(get_user_url, headers=headers).json()
+    print("user_data", user_data)
+    return user_data
+
+@router.get("/get-associated-family-members")
+def get_all_family_members(primary_user_id: str):
+    """
+    Fetch all family members linked to a primary user.
+    """
+    token = get_admin_token()  # Obtain admin token
+
+    primary_user_data = get_user(primary_user_id, token)
+
+    # Get the existing linked accounts (if any)
+    linked_accounts = primary_user_data.get("attributes", {}).get("linked_accounts", [])
+
+    # Filter users who are linked to the primary user
+    linked_users = []
+    for user_id in linked_accounts:
+        userDetails = get_user(user_id, token)
+        linked_users.append(userDetails)
+
+    # Return the list of linked family members
+    return {"family_members": linked_users}
+
 
 ######################################################################################################################################
 
 class LoginRequest(BaseModel):
     username: str
     password: str
-
-
 
 # @router.post("/login")
 # def login(user: LoginRequest):
@@ -183,53 +266,6 @@ def login(user: LoginRequest):
 
 
 ########################################################################################################
-
-class FamilyMemberRequest(BaseModel):
-    primary_user_id: str
-    family_member_email: str
-    first_name: str
-    last_name: str
-    password: str
-
-
-@router.post("/add-family-member")
-def add_family_member(member: FamilyMemberRequest):
-    """Add a family member linked to a primary user."""
-    token = get_admin_token()
-    
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users"
-
-    # Create family member user
-    payload = {
-        "username": member.family_member_email,
-        "email": member.family_member_email,
-        "firstName": member.first_name,
-        "lastName": member.last_name,
-        "enabled": True,
-        "credentials": [{"type": "password", "value": member.password, "temporary": False}],
-    }
-
-    response = requests.post(url, json=payload, headers=headers)
-    if response.status_code != 201:
-        raise HTTPException(status_code=400, detail="Error creating family member")
-
-    # Retrieve the created user's ID
-    new_user_id = response.headers["Location"].split("/")[-1]
-
-    # Update primary user with linked account
-    primary_user_url = f"{KEYCLOAK_URL}/admin/realms/{REALM}/users/{member.primary_user_id}"
-    primary_user_data = requests.get(primary_user_url, headers=headers).json()
-    
-    linked_accounts = primary_user_data.get("attributes", {}).get("linked_accounts", "[]")
-    linked_accounts = eval(linked_accounts)
-    linked_accounts.append(new_user_id)
-
-    # Update linked accounts in Keycloak
-    requests.put(primary_user_url, json={"attributes": {"linked_accounts": str(linked_accounts)}}, headers=headers)
-
-    return {"message": "Family member added successfully"}
-
 
 
 #add-family-member
