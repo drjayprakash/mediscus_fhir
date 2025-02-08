@@ -1,13 +1,19 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Security
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from typing import Optional
 import requests
 from dotenv import load_dotenv
 import os
 import json
+import logging
+
 
 load_dotenv()  # This loads environment variables from .env file
 router = APIRouter()
+
+# Define the OAuth2 scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 KEYCLOAK_URL = os.getenv("KEYCLOAK_SERVER_URL")
@@ -48,6 +54,34 @@ def get_admin_token():
 
     except requests.exceptions.RequestException as e:
         raise Exception(f"Request error: {e}")
+    
+###################################################################################################
+#role based access control
+
+def get_current_user(token: str = Security(oauth2_scheme)):
+    """Verify the JWT token and return user details."""
+    headers = {"Authorization": f"Bearer {token}"}
+    userinfo_url = f"{KEYCLOAK_SERVER_URL}/realms/{REALM}/protocol/openid-connect/userinfo"
+    response = requests.get(userinfo_url, headers=headers)
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_data = response.json()
+    if "Primary" not in user_data.get("realm_access", {}).get("roles", []):
+        raise HTTPException(status_code=403, detail="Forbidden: You don't have access")
+    return user_data
+
+
+##########################################################################################################
+#signup
+
+##############################################################################################################
+
+
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 class SignUpRequest(BaseModel):
     # username: str
@@ -60,6 +94,7 @@ class SignUpRequest(BaseModel):
 
 @router.post("/signup")
 def signup(user: SignUpRequest):
+    logger.info(f"Signing up user: {user.email}")
     """Register a primary user in Keycloak."""
     token = get_admin_token()  # Obtain admin token
 
@@ -180,6 +215,50 @@ def get_all_family_members(primary_user_id: str):
 
     # Return the list of linked family members
     return {"family_members": linked_users}
+
+
+
+
+
+
+#######################################################
+
+
+@router.put("/update-family-member/{member_id}")
+def update_family_member(member_id: str, user: SignUpRequest, token: str = Depends(get_admin_token)):
+    """Update family member details."""
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    url = f"{KEYCLOAK_SERVER_URL}/admin/realms/{REALM}/users/{member_id}"
+    payload = {
+        "firstName": user.first_name,
+        "lastName": user.last_name,
+        "email": user.email
+    }
+    response = requests.put(url, json=payload, headers=headers)
+    if response.status_code != 204:
+        raise HTTPException(status_code=400, detail="Error updating family member")
+    return {"message": "Family member updated successfully"}
+
+@router.delete("/delete-family-member/{member_id}")
+def delete_family_member(member_id: str, token: str = Depends(get_admin_token)):
+    """Delete a family member."""
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    url = f"{KEYCLOAK_SERVER_URL}/admin/realms/{REALM}/users/{member_id}"
+    response = requests.delete(url, headers=headers)
+    if response.status_code != 204:
+        raise HTTPException(status_code=400, detail="Error deleting family member")
+    return {"message": "Family member deleted successfully"}
+
+
+
+
+
 
 
 ######################################################################################################################################
@@ -374,3 +453,4 @@ def switch_account(access_token: str, subject: str):
         return response.json()
     else:
         raise HTTPException(status_code=400, detail="Failed to switch account")
+
