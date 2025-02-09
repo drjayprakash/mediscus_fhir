@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 
 try:
     # Initialize Keycloak Admin API
-    keycloak_admin = KeycloakAdmin(
-        server_url=KEYCLOAK_SERVER_URL,
-        username="admin",
-        password="admin_password",
-        realm_name=KEYCLOAK_REALM,
-        verify=True
-    )
+    # keycloak_admin = KeycloakAdmin(
+    #     server_url=KEYCLOAK_SERVER_URL,
+    #     username="admin",
+    #     password="admin_password",
+    #     realm_name=KEYCLOAK_REALM,
+    #     verify=True
+    # )
 
     # Initialize Keycloak OpenID Client (for token exchange)
     keycloak_openid = KeycloakOpenID(
