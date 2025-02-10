@@ -13,3 +13,11 @@ KEYCLOAK_REDIRECT_URI = os.getenv("KEYCLOAK_REDIRECT_URI", "http://localhost:800
 FHIR_SERVER_BASE = os.getenv("FHIR_SERVER_BASE", "http://156.67.111.202:8080/")
 
 
+FHIR_CONFIG = {
+    "app_id": "mediscus_app",
+    "api_base": "http://156.67.111.202:8080/"
+}
+
+
+
+

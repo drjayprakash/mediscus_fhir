@@ -17,7 +17,9 @@ pip install -r requirements.txt
 ## Running the Project
 ```sh
 
-source venv/Scripts/activate
+python -m venv venv
+
+source venv/Scripts/activate    #gitbash
 
 uvicorn app.main:app --reload
 ```
